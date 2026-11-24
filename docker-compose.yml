@@ -1,0 +1,47 @@
+# Temporal MCP Server on Dokploy (Ordinatude).
+#
+# Dokploy: create a Compose service pointing at this repo, paste the contents
+# of .env.ordinatude.example into the Environment tab, then add a domain in the
+# Domains tab (service: temporal-mcp, port: 8000, path: /). MCP clients connect
+# to https://<domain>/mcp (Streamable HTTP) or https://<domain>/sse (SSE).
+#
+# The MCP container talks gRPC directly to the Temporal frontend over the
+# Temporal stack's Docker network. temporal.ordinatude.dev is the Web UI
+# behind Authentik, not the gRPC endpoint, so it is not used here.
+
+services:
+  temporal-mcp:
+    build:
+      context: .
+      dockerfile: Dockerfile.http
+    image: temporal-mcp-ordinatude:latest
+    restart: unless-stopped
+    environment:
+      TEMPORAL_HOST: ${TEMPORAL_HOST:-temporal:7233}
+      TEMPORAL_NAMESPACE: ${TEMPORAL_NAMESPACE:-default}
+      TEMPORAL_ALLOWED_NAMESPACES: ${TEMPORAL_ALLOWED_NAMESPACES:-default}
+      TEMPORAL_TLS_ENABLED: ${TEMPORAL_TLS_ENABLED:-false}
+      TEMPORAL_API_KEY: ${TEMPORAL_API_KEY:?Set TEMPORAL_API_KEY to an Authentik-issued JWT}
+      TEMPORAL_CODEC_ENDPOINT: ${TEMPORAL_CODEC_ENDPOINT:-}
+      TEMPORAL_CODEC_AUTH: ${TEMPORAL_CODEC_AUTH:-}
+      MCP_PROXY_PORT: ${MCP_PROXY_PORT:-8000}
+      MCP_ALLOW_ORIGIN: ${MCP_ALLOW_ORIGIN:-*}
+      MCP_ALLOWED_HOST: ${MCP_ALLOWED_HOST:-}
+    expose:
+      - "${MCP_PROXY_PORT:-8000}"
+    networks:
+      - dokploy-network
+      - temporal
+    # Optional: require HTTP basic auth at Traefik. Authentik forward-auth does
+    # not work with most MCP clients (they can't do the browser redirect).
+    # Generate with: htpasswd -nbB user 'pass' | sed -e 's/\$/\$\$/g'
+    # labels:
+    #   - traefik.http.middlewares.temporal-mcp-auth.basicauth.users=${MCP_BASIC_AUTH_USERS}
+    #   - traefik.http.routers.<dokploy-router-name>.middlewares=temporal-mcp-auth
+
+networks:
+  dokploy-network:
+    external: true
+  temporal:
+    external: true
+    name: ${TEMPORAL_DOCKER_NETWORK:?Set TEMPORAL_DOCKER_NETWORK to the Temporal stack's network}

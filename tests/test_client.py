@@ -87,13 +87,17 @@ class TestDetermineTlsConfig:
         assert tls.client_cert is None
         assert tls.client_private_key is None
 
+    def test_api_key_with_explicit_tls_false_disables_tls(self):
+        tls = TemporalClientManager(api_key="jwt", tls_enabled=False)._determine_tls_config()
+        assert tls is False
+
     def test_explicit_true_enables_tls(self):
         tls = TemporalClientManager(temporal_host="localhost:7233", tls_enabled=True)._determine_tls_config()
         assert isinstance(tls, TLSConfig)
 
     def test_explicit_false_disables_tls(self):
         tls = TemporalClientManager(temporal_host="my-namespace.tmprl.cloud:7233", tls_enabled=False)._determine_tls_config()
-        assert tls is None
+        assert tls is False
 
     def test_auto_detect_remote_enables_tls(self):
         tls = TemporalClientManager(temporal_host="my-namespace.tmprl.cloud:7233")._determine_tls_config()
@@ -101,7 +105,7 @@ class TestDetermineTlsConfig:
 
     def test_auto_detect_local_disables_tls(self):
         tls = TemporalClientManager(temporal_host="localhost:7233")._determine_tls_config()
-        assert tls is None
+        assert tls is False
 
 
 class TestConnect:
@@ -116,6 +120,18 @@ class TestConnect:
         assert client is mock_client
         assert mgr.client is mock_client
         assert mock_connect.call_args.kwargs["namespace"] == "payments"
+
+    @pytest.mark.asyncio
+    async def test_connect_api_key_with_tls_false_passes_tls_false(self):
+        # The SDK treats tls=None as "enable TLS when api_key is set", so an
+        # explicit disable must reach Client.connect as False, not None.
+        mgr = TemporalClientManager(temporal_host="temporal:7233", api_key="jwt", tls_enabled=False)
+
+        with patch("temporal_mcp.client.Client.connect", return_value=AsyncMock()) as mock_connect:
+            await mgr.connect()
+
+        assert mock_connect.call_args.kwargs["tls"] is False
+        assert mock_connect.call_args.kwargs["api_key"] == "jwt"
 
     @pytest.mark.asyncio
     async def test_connect_reuses_existing_client(self):

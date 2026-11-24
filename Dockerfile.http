@@ -1,0 +1,46 @@
+# Temporal MCP Server for Dokploy (HTTP).
+#
+# The server itself only speaks stdio. mcp-proxy wraps it and serves MCP over
+# HTTP: Streamable HTTP at /mcp and legacy SSE at /sse.
+# Debian slim is used so temporalio installs from prebuilt wheels (no Rust build).
+
+FROM python:3.13-slim AS builder
+
+WORKDIR /app
+RUN python -m venv /opt/venv
+ENV PATH="/opt/venv/bin:$PATH"
+
+COPY requirements.txt .
+RUN pip install --no-cache-dir --upgrade pip \
+ && pip install --no-cache-dir -r requirements.txt
+
+# mcp-proxy gets its own venv: it imports mcp 1.x internals (request_ctx) that
+# were removed in mcp 2.x, which the server itself requires.
+RUN python -m venv /opt/proxy \
+ && /opt/proxy/bin/pip install --no-cache-dir "mcp-proxy>=0.8,<1" "mcp<2"
+
+FROM python:3.13-slim AS runtime
+
+ENV PATH="/opt/venv/bin:$PATH" \
+    PYTHONUNBUFFERED=1 \
+    MCP_PROXY_PORT=8000
+
+RUN useradd --system --uid 10001 --home /app mcp \
+ && mkdir -p /certs /data && chown mcp /data
+
+WORKDIR /app
+COPY --from=builder /opt/venv /opt/venv
+COPY --from=builder /opt/proxy /opt/proxy
+COPY server.py pyproject.toml ./
+COPY temporal_mcp/ ./temporal_mcp/
+
+USER mcp
+EXPOSE 8000
+
+HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3 \
+  CMD python -c "import os,socket; socket.create_connection(('127.0.0.1', int(os.environ['MCP_PROXY_PORT'])), 3)"
+
+# MCP_ALLOWED_HOST: public hostname (e.g. temporal-mcp.example.dev); mcp-proxy
+# rejects other Host headers with 421 (DNS-rebinding protection).
+# --pass-environment forwards TEMPORAL_* vars to the stdio server process.
+CMD ["sh", "-c", "exec /opt/proxy/bin/mcp-proxy --host 0.0.0.0 --port \"$MCP_PROXY_PORT\" --pass-environment --allow-origin \"${MCP_ALLOW_ORIGIN:-*}\" ${MCP_ALLOWED_HOST:+--allowed-host \"$MCP_ALLOWED_HOST\"} -- python -u server.py"]

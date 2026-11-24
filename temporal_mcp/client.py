@@ -2,7 +2,7 @@
 
 import asyncio
 import sys
-from typing import Optional, Sequence
+from typing import Optional, Sequence, Union
 
 from temporalio.client import Client, TLSConfig
 from temporalio.converter import DataConverter, DefaultFailureConverterWithEncodedAttributes
@@ -191,11 +191,13 @@ class TemporalClientManager:
         )
         return client_cert, client_key
 
-    def _determine_tls_config(self) -> Optional[TLSConfig]:
+    def _determine_tls_config(self) -> Union[TLSConfig, bool]:
         """Determine TLS configuration based on settings, hostname, and client certs.
 
         Returns:
-            TLS configuration or None
+            TLS configuration, or False to disable TLS. Never None: the SDK
+            treats tls=None as "enable TLS when an api_key is set", which
+            would override an explicit TEMPORAL_TLS_ENABLED=false.
         """
         client_cert, client_key = self._load_client_certs()
 
@@ -206,21 +208,23 @@ class TemporalClientManager:
                 client_private_key=client_key,
             )
 
-        # API key auth requires TLS
+        # API key auth defaults to TLS, but an explicit TEMPORAL_TLS_ENABLED=false
+        # wins so a bearer token (e.g. an OIDC JWT) can be sent to a plaintext
+        # frontend on a private network.
         if self.api_key:
-            return TLSConfig()
+            return False if self.tls_enabled is False else TLSConfig()
 
         # Priority: explicit tls_enabled setting > auto-detect from hostname
         if self.tls_enabled is True:
             return TLSConfig()
         elif self.tls_enabled is False:
-            return None
+            return False
         elif self._is_remote_host():
             # Auto-detect: enable TLS for remote connections
             return TLSConfig()
         else:
             # Auto-detect: disable TLS for local connections
-            return None
+            return False
 
     def _is_remote_host(self) -> bool:
         """Check if the host is a remote (non-local) host.
@@ -231,7 +235,7 @@ class TemporalClientManager:
         local_hosts = ["localhost", "127.0.0.1", "host.docker.internal"]
         return not any(local_host in self.temporal_host for local_host in local_hosts)
 
-    def _log_connection_info(self, tls_config: Optional[TLSConfig]):
+    def _log_connection_info(self, tls_config: Union[TLSConfig, bool]):
         """Log connection information for debugging.
 
         Args:
@@ -241,7 +245,7 @@ class TemporalClientManager:
             print(f"Connecting to {self.temporal_host} with TLS enabled (explicit)", file=sys.stderr)
         elif self.tls_enabled is False:
             print(f"Connecting to {self.temporal_host} without TLS (explicit)", file=sys.stderr)
-        elif tls_config is not None:
+        elif tls_config:
             print(f"Connecting to {self.temporal_host} with TLS enabled (auto-detected for remote host)", file=sys.stderr)
         else:
             print(f"Connecting to {self.temporal_host} without TLS (auto-detected for local host)", file=sys.stderr)
