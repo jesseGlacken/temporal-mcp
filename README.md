@@ -52,6 +52,25 @@ These older tools list matching executions and act on each one inside the MCP ca
 - **`batch_cancel_activities`** - Cancel multiple standalone activities matching a query (configurable batch size and concurrency)
 - **`batch_terminate_activities`** - Terminate multiple standalone activities matching a query (configurable batch size and concurrency)
 
+### Workers & Task Queues
+
+Read-only tools that give the same view as the Temporal Web UI **Workers** page. None of them change worker, deployment, or versioning state.
+
+Works on every server (no worker heartbeating needed):
+
+- **`describe_task_queue`** - Pollers (identity, last access time, rate) and backlog count/age plus add/dispatch rates for a task queue, per type (`task_queue_type`: `workflow`, `activity`, `nexus`, or `all`, the default; `report_stats` defaults to true). The result has a top-level `has_pollers` flag and a `warning` when no worker polls the queue. Use this first when a workflow or activity is not progressing.
+- **`list_worker_deployments`** - Worker deployments (Worker Versioning) with create time, routing config and latest version, paginated with `page_size` and `next_page_token`
+- **`describe_worker_deployment`** - A deployment's versions and routing config (current and ramping version)
+- **`describe_worker_deployment_version`** - A version's status, drainage and task queues; `report_task_queue_stats: true` adds per-queue backlog stats
+
+Need worker heartbeating:
+
+- **`list_workers`** - Running workers (instance key, identity, host, task queue, SDK, deployment version, last heartbeat), filtered with a worker `query` such as `TaskQueue = "orders"` and paginated with `page_size` and `next_page_token`
+- **`count_workers`** - Number of workers, optionally filtered by a worker `query`
+- **`describe_worker`** - The full latest heartbeat of one worker, by `worker_instance_key` from `list_workers`
+
+Worker heartbeating needs a server that advertises the `worker_heartbeats` namespace capability (dynamic config `frontend.WorkerHeartbeatsEnabled` and `frontend.ListWorkersEnabled`; Temporal Server 1.32 enables both by default) and SDK workers that send heartbeats (recent SDKs do by default). Otherwise these three tools return a `not_supported` error that points to `describe_task_queue`.
+
 ### Schedule Management
 
 - **`create_schedule`** - Create a new schedule for periodic workflow execution using cron expressions

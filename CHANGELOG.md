@@ -13,11 +13,17 @@
 - Add server-side batch job tools (`start_batch_job`, `describe_batch_job`, `list_batch_jobs`,
   `stop_batch_job`) backed by Temporal's batch operations API, so jobs run on the server and
   appear on the Temporal Web UI Batch page. The client-side `batch_*` tools are unchanged.
+- Add read-only worker visibility tools: `describe_task_queue` (pollers, backlog, `has_pollers`
+  and a no-poller warning), `list_workers`, `count_workers`, `describe_worker` (need worker
+  heartbeating; return a `not_supported` error otherwise), and `list_worker_deployments`,
+  `describe_worker_deployment`, `describe_worker_deployment_version`.
 
 ### Testing
 
 - Add a black-box test suite (`pytest -m blackbox`) that drives the MCP server through an MCP
   client against a local Temporal dev server.
+- Cover the worker tools end to end with real heartbeating and versioned workers, plus a second
+  dev server with worker heartbeats disabled.
 
 ## v1.12.0 (2026-10-22)
 

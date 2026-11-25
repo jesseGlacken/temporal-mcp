@@ -388,6 +388,98 @@ def get_all_tools(allowed_namespaces: Optional[Iterable[str]] = None) -> list[To
             },
         ),
         Tool(
+            name="describe_task_queue",
+            description=(
+                "Describe a task queue: which workers poll it (pollers with identity, last access time and rate) and its backlog count/age and add/dispatch rates, per task queue type. "
+                "Use this first when a workflow or activity is not progressing (for example stuck at its first workflow task or with an activity never started): "
+                "has_pollers is false and a warning is set when no worker is polling the queue. Works on every Temporal server, unlike list_workers."
+            ),
+            input_schema={
+                "type": "object",
+                "properties": {
+                    "task_queue": {"type": "string", "minLength": 1, "description": "Task queue name"},
+                    "task_queue_type": {"type": "string", "enum": ["workflow", "activity", "nexus", "all"], "description": "Which task queue type to describe (default: all)"},
+                    "report_stats": {"type": "boolean", "description": "Include backlog and rate stats (default: true)"},
+                },
+                "required": ["task_queue"],
+            },
+        ),
+        Tool(
+            name="list_workers",
+            description=(
+                "List running workers in the namespace from their heartbeats (instance key, identity, host, task queue, SDK, deployment version, last heartbeat), as on the Temporal UI Workers page. "
+                "Needs a server with worker heartbeating enabled; otherwise returns a not_supported error, so use describe_task_queue to see a queue's pollers instead. "
+                "Paginate by passing the returned next_page_token back."
+            ),
+            input_schema={
+                "type": "object",
+                "properties": {
+                    "query": {"type": "string", "description": 'Worker visibility query, e.g. TaskQueue = "my-queue"'},
+                    "page_size": {"type": "integer", "minimum": 1, "description": "Maximum number of workers per page (server default if omitted)"},
+                    "next_page_token": {"type": "string", "description": "Opaque token from a previous list_workers call"},
+                    "include_system_workers": {"type": "boolean", "description": "Also list the server's internal workers (default: false)"},
+                },
+            },
+        ),
+        Tool(
+            name="count_workers",
+            description="Count heartbeating workers in the namespace, optionally filtered by a worker query. Needs worker heartbeating like list_workers; otherwise use describe_task_queue.",
+            input_schema={
+                "type": "object",
+                "properties": {
+                    "query": {"type": "string", "description": 'Worker visibility query, e.g. TaskQueue = "my-queue"'},
+                    "include_system_workers": {"type": "boolean", "description": "Also count the server's internal workers (default: false)"},
+                },
+            },
+        ),
+        Tool(
+            name="describe_worker",
+            description=(
+                "Describe one worker from its latest heartbeat: host, process, task slots, pollers, SDK and deployment version. "
+                "Get the key from list_workers. Needs worker heartbeating; otherwise use describe_task_queue."
+            ),
+            input_schema={
+                "type": "object",
+                "properties": {"worker_instance_key": {"type": "string", "minLength": 1, "description": "Worker instance key from list_workers"}},
+                "required": ["worker_instance_key"],
+            },
+        ),
+        Tool(
+            name="list_worker_deployments",
+            description=(
+                "List worker deployments (Worker Versioning) in the namespace with create time, routing config and latest version summary. " "Paginate by passing the returned next_page_token back."
+            ),
+            input_schema={
+                "type": "object",
+                "properties": {
+                    "page_size": {"type": "integer", "minimum": 1, "description": "Maximum number of deployments per page (server default if omitted)"},
+                    "next_page_token": {"type": "string", "description": "Opaque token from a previous list_worker_deployments call"},
+                },
+            },
+        ),
+        Tool(
+            name="describe_worker_deployment",
+            description="Describe a worker deployment: its versions (build IDs, status) and routing config (current version, ramping version and percentage).",
+            input_schema={
+                "type": "object",
+                "properties": {"deployment_name": {"type": "string", "minLength": 1, "description": "Worker deployment name"}},
+                "required": ["deployment_name"],
+            },
+        ),
+        Tool(
+            name="describe_worker_deployment_version",
+            description="Describe one worker deployment version: status, drainage info and the task queues it polls (with backlog stats when report_task_queue_stats is true).",
+            input_schema={
+                "type": "object",
+                "properties": {
+                    "deployment_name": {"type": "string", "minLength": 1, "description": "Worker deployment name"},
+                    "build_id": {"type": "string", "minLength": 1, "description": "Build ID of the version"},
+                    "report_task_queue_stats": {"type": "boolean", "description": "Include per task queue backlog stats (default: false)"},
+                },
+                "required": ["deployment_name", "build_id"],
+            },
+        ),
+        Tool(
             name="create_schedule",
             description="Create a new schedule for periodic workflow execution",
             input_schema={
