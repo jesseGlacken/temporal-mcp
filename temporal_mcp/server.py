@@ -17,6 +17,7 @@ from .utils.exceptions import format_connection_error, format_error_response
 from .handlers import workflow_handlers
 from .handlers import query_handlers
 from .handlers import batch_handlers
+from .handlers import batch_job_handlers
 from .handlers import schedule_handlers
 from .handlers import activity_handlers
 
@@ -165,6 +166,16 @@ class TemporalMCPServer:
                 return await batch_handlers.batch_cancel_activities(client, handler_arguments)
             elif name == "batch_terminate_activities":
                 return await batch_handlers.batch_terminate_activities(client, handler_arguments)
+
+            # Server-side batch jobs
+            elif name == "start_batch_job":
+                return await batch_job_handlers.start_batch_job(client, handler_arguments)
+            elif name == "describe_batch_job":
+                return await batch_job_handlers.describe_batch_job(client, handler_arguments)
+            elif name == "list_batch_jobs":
+                return await batch_job_handlers.list_batch_jobs(client, handler_arguments)
+            elif name == "stop_batch_job":
+                return await batch_job_handlers.stop_batch_job(client, handler_arguments)
 
             # Schedule operations
             elif name == "create_schedule":

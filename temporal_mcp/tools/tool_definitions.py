@@ -322,6 +322,63 @@ def get_all_tools(allowed_namespaces: Optional[Iterable[str]] = None) -> list[To
             },
         ),
         Tool(
+            name="start_batch_job",
+            description=(
+                "Start a server-side batch job that applies one operation to every workflow (or standalone activity) matched by a visibility query or a list of workflow IDs. "
+                "The Temporal server runs the job: this call returns a job_id immediately without waiting, and the job appears on the Temporal Web UI Batch page. "
+                "Track it with describe_batch_job, list it with list_batch_jobs, and stop it with stop_batch_job. "
+                "Prefer this over the older batch_* tools, which run client-side, loop inside this MCP call, and do not appear in the UI. "
+                "Exactly one of 'query' or 'workflow_ids' is required; an empty filter is rejected because it would target the whole namespace."
+            ),
+            input_schema={
+                "type": "object",
+                "properties": {
+                    "operation": {
+                        "type": "string",
+                        "enum": ["terminate", "cancel", "signal", "delete", "reset", "cancel_activities", "terminate_activities"],
+                        "description": "Operation to apply. cancel_activities/terminate_activities act on standalone activities and take only 'query'.",
+                    },
+                    "query": {"type": "string", "minLength": 1, "description": 'Visibility query selecting the targets, e.g. WorkflowType = "Foo" AND ExecutionStatus = "Running"'},
+                    "workflow_ids": {"type": "array", "items": {"type": "string"}, "minItems": 1, "description": "Explicit workflow IDs to target (workflow operations only)"},
+                    "reason": {"type": "string", "minLength": 1, "description": "Why the job is running; shown in the UI and audit trail"},
+                    "job_id": {"type": "string", "minLength": 1, "description": "Job ID to use (default: mcp-batch-<uuid4>)"},
+                    "max_operations_per_second": {"type": "number", "exclusiveMinimum": 0, "description": "Rate limit for the job (server default if omitted)"},
+                    "signal_name": {"type": "string", "description": "Signal to send (required for 'signal'; not allowed otherwise)"},
+                    "signal_args": {"description": "Signal argument, encoded with the server's data converter (only for 'signal')"},
+                    "reset_type": {"type": "string", "enum": ["first_workflow_task", "last_workflow_task"], "description": "Reset point (required for 'reset'; not allowed otherwise)"},
+                },
+                "required": ["operation", "reason"],
+            },
+        ),
+        Tool(
+            name="describe_batch_job",
+            description="Describe a server-side batch job started with start_batch_job (or from the UI/CLI): state, operation type, start/close time, total/complete/failure counts, reason, identity and query.",
+            input_schema={"type": "object", "properties": {"job_id": {"type": "string", "description": "The batch job ID"}}, "required": ["job_id"]},
+        ),
+        Tool(
+            name="list_batch_jobs",
+            description="List server-side batch jobs in the namespace (the same jobs shown on the Temporal UI Batch page). Paginate by passing the returned next_page_token back.",
+            input_schema={
+                "type": "object",
+                "properties": {
+                    "page_size": {"type": "integer", "minimum": 1, "description": "Maximum number of jobs per page (server default if omitted)"},
+                    "next_page_token": {"type": "string", "description": "Opaque token from a previous list_batch_jobs call"},
+                },
+            },
+        ),
+        Tool(
+            name="stop_batch_job",
+            description="Stop a running server-side batch job. Operations already applied are not undone.",
+            input_schema={
+                "type": "object",
+                "properties": {
+                    "job_id": {"type": "string", "description": "The batch job ID to stop"},
+                    "reason": {"type": "string", "minLength": 1, "description": "Why the job is being stopped"},
+                },
+                "required": ["job_id", "reason"],
+            },
+        ),
+        Tool(
             name="create_schedule",
             description="Create a new schedule for periodic workflow execution",
             input_schema={
