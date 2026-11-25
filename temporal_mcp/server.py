@@ -20,6 +20,7 @@ from .handlers import batch_handlers
 from .handlers import batch_job_handlers
 from .handlers import schedule_handlers
 from .handlers import activity_handlers
+from .handlers import worker_handlers
 
 
 class TemporalMCPServer:
@@ -176,6 +177,22 @@ class TemporalMCPServer:
                 return await batch_job_handlers.list_batch_jobs(client, handler_arguments)
             elif name == "stop_batch_job":
                 return await batch_job_handlers.stop_batch_job(client, handler_arguments)
+
+            # Workers, task queues and worker deployments (read-only)
+            elif name == "describe_task_queue":
+                return await worker_handlers.describe_task_queue(client, handler_arguments)
+            elif name == "list_workers":
+                return await worker_handlers.list_workers(client, handler_arguments)
+            elif name == "count_workers":
+                return await worker_handlers.count_workers(client, handler_arguments)
+            elif name == "describe_worker":
+                return await worker_handlers.describe_worker(client, handler_arguments)
+            elif name == "list_worker_deployments":
+                return await worker_handlers.list_worker_deployments(client, handler_arguments)
+            elif name == "describe_worker_deployment":
+                return await worker_handlers.describe_worker_deployment(client, handler_arguments)
+            elif name == "describe_worker_deployment_version":
+                return await worker_handlers.describe_worker_deployment_version(client, handler_arguments)
 
             # Schedule operations
             elif name == "create_schedule":
