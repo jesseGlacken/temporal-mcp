@@ -26,6 +26,7 @@ from temporalio.api.workflowservice.v1 import (
     CountWorkersRequest,
     DescribeNamespaceRequest,
     DescribeTaskQueueRequest,
+    DescribeTaskQueueResponse,
     DescribeWorkerDeploymentRequest,
     DescribeWorkerDeploymentVersionRequest,
     DescribeWorkerRequest,
@@ -109,7 +110,7 @@ def _optional_query(args: dict) -> str | None:
     return query
 
 
-def _apply_paging(args: dict, request: Message, tool: str) -> None:
+def _apply_paging(args: dict, request: ListWorkersRequest | ListWorkerDeploymentsRequest, tool: str) -> None:
     """Validate page_size / next_page_token and copy them onto a list request."""
     if "page_size" in args:
         page_size = args["page_size"]
@@ -235,7 +236,7 @@ async def describe_worker(client: Client, args: dict) -> list[TextContent] | Cal
 # --- task queues ---------------------------------------------------------------
 
 
-def _task_queue_section(response: Message, report_stats: bool) -> dict[str, Any]:
+def _task_queue_section(response: DescribeTaskQueueResponse, report_stats: bool) -> dict[str, Any]:
     pollers = [_to_dict(p) for p in response.pollers]
     section: dict[str, Any] = {"pollers": pollers, "poller_count": len(pollers)}
     if report_stats:
