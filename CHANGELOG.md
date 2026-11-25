@@ -2,6 +2,19 @@
 
 <!-- version list -->
 
+## Unreleased
+
+### Features
+
+- Add server-side batch job tools (`start_batch_job`, `describe_batch_job`, `list_batch_jobs`,
+  `stop_batch_job`) backed by Temporal's batch operations API, so jobs run on the server and
+  appear on the Temporal Web UI Batch page. The client-side `batch_*` tools are unchanged.
+
+### Testing
+
+- Add a black-box test suite (`pytest -m blackbox`) that drives the MCP server through an MCP
+  client against a local Temporal dev server.
+
 ## v1.12.0 (2026-10-22)
 
 ### Bug Fixes

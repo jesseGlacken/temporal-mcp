@@ -31,9 +31,26 @@ Read more on the [Temporal Code Exchange](https://temporal.io/code-exchange/temp
 
 ### Batch Operations
 
+#### Server-side batch jobs (recommended)
+
+These tools start a batch job that the Temporal server runs. The call returns a `job_id` immediately, the job shows up on the Temporal Web UI **Batch** page, and it can be tracked and stopped from the UI, the CLI, or these tools.
+
+- **`start_batch_job`** - Apply `terminate`, `cancel`, `signal`, `delete`, `reset` (`first_workflow_task` / `last_workflow_task`), `cancel_activities` or `terminate_activities` to the executions matched by a visibility `query` or a list of `workflow_ids`. Requires a `reason`; optional `job_id` (default `mcp-batch-<uuid>`) and `max_operations_per_second`. An empty filter is rejected, since it would target the whole namespace.
+- **`describe_batch_job`** - State, operation type, start/close time, and total/complete/failure counts of a batch job
+- **`list_batch_jobs`** - List batch jobs in the namespace, paginated with `page_size` and `next_page_token`
+- **`stop_batch_job`** - Stop a running batch job (already-applied operations are not undone)
+
+The server limits how many batch jobs can run at once per namespace (`frontend.MaxConcurrentBatchOperationPerNamespace`, default 1); `start_batch_job` returns an error when that limit is reached.
+
+#### Client-side batch loops
+
+These older tools list matching executions and act on each one inside the MCP call. They do not create a server batch job, so nothing appears on the UI Batch page, and the call stays open until every item is processed.
+
 - **`batch_signal`** - Send a signal to multiple workflows matching a query (configurable batch size)
 - **`batch_cancel`** - Cancel multiple workflows matching a query (configurable batch size)
 - **`batch_terminate`** - Terminate multiple workflows matching a query with a specified reason (configurable batch size)
+- **`batch_cancel_activities`** - Cancel multiple standalone activities matching a query (configurable batch size and concurrency)
+- **`batch_terminate_activities`** - Terminate multiple standalone activities matching a query (configurable batch size and concurrency)
 
 ### Schedule Management
 
@@ -170,8 +187,10 @@ pip install -r requirements-dev.txt
 Run the test suite:
 
 ```bash
-pytest test.py -v
+pytest -v
 ```
+
+The `blackbox` tests (`tests/blackbox/`) start a local Temporal dev server and drive the MCP server through an MCP client. The dev server binary is downloaded on first use; set `TEMPORAL_DEV_SERVER_DIR` to cache it. Run only those tests with `pytest -m blackbox`, or skip them with `pytest -m "not blackbox"`.
 
 ### Building the Docker Image
 

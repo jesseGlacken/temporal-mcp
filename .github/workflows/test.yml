@@ -28,5 +28,16 @@ jobs:
           pip install -e .
           pip install pytest pytest-asyncio
 
-      - name: Run tests
-        run: pytest tests/ -v
+      - name: Cache Temporal dev server
+        uses: actions/cache@v4
+        with:
+          path: ${{ runner.temp }}/temporal-dev-server
+          key: temporal-dev-server-${{ runner.os }}-${{ hashFiles('requirements.txt', 'pyproject.toml') }}
+
+      - name: Run unit tests
+        run: pytest tests/ -v -m "not blackbox"
+
+      - name: Run black-box tests
+        env:
+          TEMPORAL_DEV_SERVER_DIR: ${{ runner.temp }}/temporal-dev-server
+        run: pytest tests/ -v -m blackbox
