@@ -1,5 +1,6 @@
 """Tests for standalone activity handler tools."""
 
+import asyncio
 import json
 from datetime import datetime, timedelta
 from unittest.mock import AsyncMock, MagicMock
@@ -54,8 +55,34 @@ class TestExecuteActivity:
         assert response["status"] == "completed"
         assert response["result"]["ok"] is True
 
+    @pytest.mark.asyncio
+    async def test_execute_activity_passes_schedule_to_close_timeout(self, mock_client):
+        # start-to-close never fires while no worker polls; schedule-to-close bounds the queue wait.
+        mock_client.execute_activity.return_value = None
+
+        await activity_handlers.execute_activity(
+            mock_client,
+            {"activity": "a", "activity_id": "id", "task_queue": "q", "schedule_to_close_timeout_seconds": 30},
+        )
+
+        assert mock_client.execute_activity.call_args.kwargs["schedule_to_close_timeout"] == timedelta(seconds=30)
+
 
 class TestGetActivityResult:
+    @pytest.mark.asyncio
+    async def test_get_activity_result_timeout_is_flagged_as_error(self, mock_client):
+        async def never():
+            await asyncio.sleep(3600)
+
+        mock_handle = MagicMock()
+        mock_handle.result = never
+        mock_client.get_activity_handle = MagicMock(return_value=mock_handle)
+
+        result = await activity_handlers.get_activity_result(mock_client, {"activity_id": "a", "timeout": 0.01})
+
+        assert result.is_error is True
+        assert json.loads(result.content[0].text)["type"] == "timeout"
+
     @pytest.mark.asyncio
     async def test_get_activity_result_success(self, mock_client):
         mock_handle = AsyncMock()
@@ -90,6 +117,22 @@ class TestDescribeActivity:
         assert response["activity_id"] == "test-activity-123"
         assert response["activity_type"] == "compose_greeting"
         assert response["status"] == "ACTIVITY_EXECUTION_STATUS_COMPLETED"
+
+    @pytest.mark.asyncio
+    async def test_describe_activity_missing_times_are_null(self, mock_client):
+        mock_description = MagicMock()
+        mock_description.status = 1
+        mock_description.start_time = None
+        mock_description.close_time = None
+        mock_handle = AsyncMock()
+        mock_handle.describe.return_value = mock_description
+        mock_client.get_activity_handle = MagicMock(return_value=mock_handle)
+
+        result = await activity_handlers.describe_activity(mock_client, {"activity_id": "a"})
+
+        response = json.loads(result[0].text)
+        assert response["start_time"] is None
+        assert response["close_time"] is None
 
 
 class TestListActivities:

@@ -1,5 +1,6 @@
 """Tests for workflow handler tools."""
 
+import asyncio
 import json
 import pytest
 from unittest.mock import AsyncMock, MagicMock
@@ -151,18 +152,34 @@ class TestListWorkflows:
         assert response["workflows"][1]["workflow_id"] == "workflow-2"
 
 
+class TestGetWorkflowResultTimeout:
+    @pytest.mark.asyncio
+    async def test_timeout_is_flagged_as_error(self, mock_client):
+        async def never():
+            await asyncio.sleep(3600)
+
+        mock_handle = MagicMock()
+        mock_handle.result = never
+        mock_client.get_workflow_handle = MagicMock(return_value=mock_handle)
+
+        result = await workflow_handlers.get_workflow_result(mock_client, {"workflow_id": "wf-1", "timeout": 0.01})
+
+        assert result.is_error is True
+        assert json.loads(result.content[0].text)["type"] == "timeout"
+
+
 class TestGetWorkflowHistory:
     @pytest.mark.asyncio
     async def test_get_workflow_history_success(self, mock_client):
         mock_event1 = MagicMock()
         mock_event1.event_id = 1
         mock_event1.event_type = "WorkflowExecutionStarted"
-        mock_event1.event_time = datetime(2025, 10, 30, 12, 0, 0)
+        mock_event1.event_time = Timestamp(seconds=1761825600, nanos=412072190)
 
         mock_event2 = MagicMock()
         mock_event2.event_id = 2
         mock_event2.event_type = "ActivityTaskScheduled"
-        mock_event2.event_time = datetime(2025, 10, 30, 12, 0, 1)
+        mock_event2.event_time = Timestamp(seconds=1761825601)
 
         async def mock_fetch_history_events():
             for event in [mock_event1, mock_event2]:
@@ -179,6 +196,9 @@ class TestGetWorkflowHistory:
         assert response["workflow_id"] == "test-workflow-123"
         assert len(response["events"]) == 2
         assert response["events"][0]["event_type"] == "WorkflowExecutionStarted"
+        # Protobuf Timestamps must render as RFC 3339, not "seconds: ...\nnanos: ...".
+        assert response["events"][0]["event_time"] == "2025-10-30T12:00:00.412072190Z"
+        assert response["events"][1]["event_time"] == "2025-10-30T12:00:01Z"
 
     @pytest.mark.asyncio
     async def test_get_workflow_history_includes_activity_failure_metadata(self, mock_client):
@@ -416,7 +436,8 @@ class TestGetWorkflowEvent:
 
         result = await workflow_handlers.get_workflow_event(mock_client, {"workflow_id": "test-workflow-123", "event_id": 99})
 
-        response = json.loads(result[0].text)
+        assert result.is_error is True
+        response = json.loads(result.content[0].text)
         assert response["type"] == "not_found"
         assert response["event_id"] == 99
 

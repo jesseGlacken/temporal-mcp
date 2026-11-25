@@ -5,7 +5,7 @@ import json
 import sys
 from typing import Any, Optional
 
-from mcp.types import TextContent
+from mcp.types import CallToolResult, TextContent
 from temporalio.client import Client
 from temporalio.api.common.v1 import Payloads
 from temporalio.api.enums.v1 import EventType, RetryState, StartChildWorkflowExecutionFailedCause, TimeoutType, WorkflowExecutionStatus
@@ -83,7 +83,7 @@ async def terminate_workflow(client: Client, args: dict) -> list[TextContent]:
     return [TextContent(type="text", text=json.dumps({"status": "terminated", "workflow_id": workflow_id, "reason": reason}, indent=2))]
 
 
-async def get_workflow_result(client: Client, args: dict) -> list[TextContent]:
+async def get_workflow_result(client: Client, args: dict) -> list[TextContent] | CallToolResult:
     """Get the result of a workflow execution.
 
     Args:
@@ -106,20 +106,23 @@ async def get_workflow_result(client: Client, args: dict) -> list[TextContent]:
 
         return [TextContent(type="text", text=json.dumps({"result": result, "workflow_id": workflow_id}, indent=2, default=str))]
     except asyncio.TimeoutError:
-        return [
-            TextContent(
-                type="text",
-                text=json.dumps(
-                    {
-                        "error": f"Timeout waiting for workflow result after {timeout} seconds",
-                        "type": "timeout",
-                        "workflow_id": workflow_id,
-                        "note": "Workflow may still be running. Use describe_workflow to check status.",
-                    },
-                    indent=2,
-                ),
-            )
-        ]
+        return CallToolResult(
+            is_error=True,
+            content=[
+                TextContent(
+                    type="text",
+                    text=json.dumps(
+                        {
+                            "error": f"Timeout waiting for workflow result after {timeout} seconds",
+                            "type": "timeout",
+                            "workflow_id": workflow_id,
+                            "note": "Workflow may still be running. Use describe_workflow to check status.",
+                        },
+                        indent=2,
+                    ),
+                )
+            ],
+        )
 
 
 async def describe_workflow(client: Client, args: dict) -> list[TextContent]:
@@ -270,7 +273,7 @@ def _workflow_history_event_to_dict(event: Any, scheduled_activities: dict[int, 
         "event_id": event.event_id,
         "event_type": event.event_type,
         "event_type_name": _enum_name(EventType, event.event_type),
-        "event_time": str(event.event_time),
+        "event_time": event.event_time.ToJsonString() if event.HasField("event_time") else None,
         "attributes": {},
     }
 
@@ -452,7 +455,7 @@ def _failure_to_metadata(failure: Failure) -> dict[str, Any]:
     return result
 
 
-async def get_workflow_event(client: Client, args: dict) -> list[TextContent]:
+async def get_workflow_event(client: Client, args: dict) -> list[TextContent] | CallToolResult:
     """Get a single workflow history event with decoded payload fields.
 
     Args:
@@ -485,21 +488,24 @@ async def get_workflow_event(client: Client, args: dict) -> list[TextContent]:
             }
             return [TextContent(type="text", text=json.dumps(result, indent=2, default=str))]
 
-    return [
-        TextContent(
-            type="text",
-            text=json.dumps(
-                {
-                    "error": f"Event {event_id} not found in workflow history",
-                    "type": "not_found",
-                    "workflow_id": workflow_id,
-                    "run_id": run_id,
-                    "event_id": event_id,
-                },
-                indent=2,
-            ),
-        )
-    ]
+    return CallToolResult(
+        is_error=True,
+        content=[
+            TextContent(
+                type="text",
+                text=json.dumps(
+                    {
+                        "error": f"Event {event_id} not found in workflow history",
+                        "type": "not_found",
+                        "workflow_id": workflow_id,
+                        "run_id": run_id,
+                        "event_id": event_id,
+                    },
+                    indent=2,
+                ),
+            )
+        ],
+    )
 
 
 async def _workflow_event_to_dict(client: Client, event: Any, scheduled_activities: dict[int, dict[str, Any]]) -> dict[str, Any]:
@@ -507,7 +513,7 @@ async def _workflow_event_to_dict(client: Client, event: Any, scheduled_activiti
         "event_id": event.event_id,
         "event_type": event.event_type,
         "event_type_name": _enum_name(EventType, event.event_type),
-        "event_time": str(event.event_time),
+        "event_time": event.event_time.ToJsonString() if event.HasField("event_time") else None,
         "attributes": {},
     }
 
