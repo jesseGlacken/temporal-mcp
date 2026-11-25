@@ -157,7 +157,10 @@ def get_all_tools(allowed_namespaces: Optional[Iterable[str]] = None) -> list[To
                     "start_to_close_timeout_seconds": {"type": "number", "description": "Activity start-to-close timeout in seconds"},
                     "schedule_to_close_timeout_seconds": {
                         "type": "number",
-                        "description": "Total time limit in seconds, including time queued before a worker picks the activity up. Unlike start-to-close, this bounds the wait when no worker is polling the task queue.",
+                        "description": (
+                            "Total time limit in seconds, including time queued before a worker picks the activity up. "
+                            "Unlike start-to-close, this bounds the wait when no worker is polling the task queue."
+                        ),
                     },
                 },
                 "required": ["activity", "activity_id", "task_queue"],
@@ -176,7 +179,10 @@ def get_all_tools(allowed_namespaces: Optional[Iterable[str]] = None) -> list[To
                     "start_to_close_timeout_seconds": {"type": "number", "description": "Activity start-to-close timeout in seconds"},
                     "schedule_to_close_timeout_seconds": {
                         "type": "number",
-                        "description": "Total time limit in seconds, including time queued before a worker picks the activity up. Unlike start-to-close, this bounds the wait when no worker is polling the task queue.",
+                        "description": (
+                            "Total time limit in seconds, including time queued before a worker picks the activity up. "
+                            "Unlike start-to-close, this bounds the wait when no worker is polling the task queue."
+                        ),
                     },
                 },
                 "required": ["activity", "activity_id", "task_queue"],
@@ -352,7 +358,10 @@ def get_all_tools(allowed_namespaces: Optional[Iterable[str]] = None) -> list[To
         ),
         Tool(
             name="describe_batch_job",
-            description="Describe a server-side batch job started with start_batch_job (or from the UI/CLI): state, operation type, start/close time, total/complete/failure counts, reason, identity and query.",
+            description=(
+                "Describe a server-side batch job started with start_batch_job (or from the UI/CLI): "
+                "state, operation type, start/close time, total/complete/failure counts, reason, identity and query."
+            ),
             input_schema={"type": "object", "properties": {"job_id": {"type": "string", "description": "The batch job ID"}}, "required": ["job_id"]},
         ),
         Tool(

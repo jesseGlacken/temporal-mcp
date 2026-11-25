@@ -65,8 +65,12 @@ def pytest_collection_modifyitems(items):
 @pytest_asyncio.fixture(scope="session", loop_scope="session")
 async def temporal_env():
     """A local Temporal dev server with standalone activities enabled and two extra namespaces."""
+    # The SDK downloads into this directory but does not create it (CI's cache dir is absent on a cold cache).
+    download_dir = os.environ.get("TEMPORAL_DEV_SERVER_DIR")
+    if download_dir:
+        os.makedirs(download_dir, exist_ok=True)
     env = await WorkflowEnvironment.start_local(
-        download_dest_dir=os.environ.get("TEMPORAL_DEV_SERVER_DIR"),
+        download_dest_dir=download_dir,
         dev_server_extra_args=[
             "--namespace",
             OTHER_NAMESPACE,
