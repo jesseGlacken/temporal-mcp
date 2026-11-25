@@ -5,19 +5,23 @@ and assert only on tool results. Nothing here mocks Temporal.
 """
 
 import asyncio
+import contextlib
 import json
 import os
 import time
 import uuid
-from typing import Any, Awaitable, Callable, Sequence
+from datetime import timedelta
+from typing import Any, AsyncIterator, Awaitable, Callable, Sequence
 
 import pytest
 import pytest_asyncio
 from mcp.client import Client
-from temporalio import workflow
-from temporalio.common import RawValue
+from temporalio import activity, workflow
+from temporalio.client import Client as TemporalClient
+from temporalio.common import RawValue, VersioningBehavior, WorkerDeploymentVersion
+from temporalio.runtime import Runtime, TelemetryConfig
 from temporalio.testing import WorkflowEnvironment
-from temporalio.worker import UnsandboxedWorkflowRunner, Worker
+from temporalio.worker import UnsandboxedWorkflowRunner, Worker, WorkerDeploymentConfig
 
 from temporal_mcp.server import TemporalMCPServer
 
@@ -56,6 +60,25 @@ class BlackboxWaiter:
         return self._signals
 
 
+@activity.defn(name="BlackboxNoop")
+async def blackbox_noop() -> None:
+    """Registered so test workers also poll the activity task queue."""
+
+
+# Worker heartbeats and worker listing. Server 1.32 enables both by default; set them
+# explicitly so the suite states what it depends on.
+HEARTBEATS_ON = ["--dynamic-config-value", "frontend.WorkerHeartbeatsEnabled=true", "--dynamic-config-value", "frontend.ListWorkersEnabled=true"]
+HEARTBEATS_OFF = ["--dynamic-config-value", "frontend.WorkerHeartbeatsEnabled=false", "--dynamic-config-value", "frontend.ListWorkersEnabled=false"]
+
+
+def _download_dir() -> str | None:
+    # The SDK downloads into this directory but does not create it (CI's cache dir is absent on a cold cache).
+    download_dir = os.environ.get("TEMPORAL_DEV_SERVER_DIR")
+    if download_dir:
+        os.makedirs(download_dir, exist_ok=True)
+    return download_dir
+
+
 def pytest_collection_modifyitems(items):
     for item in items:
         if "/blackbox/" in str(item.fspath):
@@ -65,12 +88,8 @@ def pytest_collection_modifyitems(items):
 @pytest_asyncio.fixture(scope="session", loop_scope="session")
 async def temporal_env():
     """A local Temporal dev server with standalone activities enabled and two extra namespaces."""
-    # The SDK downloads into this directory but does not create it (CI's cache dir is absent on a cold cache).
-    download_dir = os.environ.get("TEMPORAL_DEV_SERVER_DIR")
-    if download_dir:
-        os.makedirs(download_dir, exist_ok=True)
     env = await WorkflowEnvironment.start_local(
-        download_dest_dir=download_dir,
+        download_dest_dir=_download_dir(),
         dev_server_extra_args=[
             "--namespace",
             OTHER_NAMESPACE,
@@ -83,6 +102,10 @@ async def temporal_env():
             # The server default allows one running batch job per namespace; tests run several.
             "--dynamic-config-value",
             "frontend.MaxConcurrentBatchOperationPerNamespace=100",
+            *HEARTBEATS_ON,
+            # Forget pollers soon after a worker stops (default 5m) so "worker gone" is observable.
+            "--dynamic-config-value",
+            'matching.PollerHistoryTTL="3s"',
         ],
     )
     try:
@@ -111,8 +134,14 @@ async def worker(temporal_env):
 @pytest_asyncio.fixture(scope="session", loop_scope="session")
 async def mcp_client(temporal_env, worker):
     """An MCP client connected in-process to a TemporalMCPServer pointed at the dev server."""
+    async with _mcp_session(temporal_env) as client:
+        yield client
+
+
+@contextlib.asynccontextmanager
+async def _mcp_session(env: WorkflowEnvironment) -> AsyncIterator[Client]:
     server = TemporalMCPServer(
-        temporal_host=temporal_env.client.service_client.config.target_host,
+        temporal_host=env.client.service_client.config.target_host,
         namespace=DEFAULT_NAMESPACE,
         tls_enabled=False,
         allowed_namespaces=[DEFAULT_NAMESPACE, OTHER_NAMESPACE],
@@ -142,10 +171,7 @@ async def mcp_client(temporal_env, worker):
         await server.client_manager.disconnect()
 
 
-@pytest.fixture
-def call(mcp_client) -> CallFn:
-    """call(name, args) -> (is_error, parsed JSON payload)."""
-
+def _make_call(mcp_client: Client) -> CallFn:
     async def _call(name: str, args: dict | None = None) -> tuple[bool, Any]:
         result = await mcp_client.call_tool(name, args or {})
         text = "".join(block.text for block in result.content if getattr(block, "type", None) == "text")
@@ -156,6 +182,70 @@ def call(mcp_client) -> CallFn:
         return bool(result.is_error), payload
 
     return _call
+
+
+@pytest.fixture
+def call(mcp_client) -> CallFn:
+    """call(name, args) -> (is_error, parsed JSON payload)."""
+    return _make_call(mcp_client)
+
+
+@pytest_asyncio.fixture(scope="session", loop_scope="session")
+async def heartbeat_runtime():
+    """An SDK runtime whose workers heartbeat every second, so list_workers sees them quickly."""
+    return Runtime(telemetry=TelemetryConfig(), worker_heartbeat_interval=timedelta(seconds=1))
+
+
+@pytest_asyncio.fixture(loop_scope="session")
+async def start_worker(temporal_env, heartbeat_runtime):
+    """start_worker(task_queue, ...) runs a real heartbeating worker until the test ends (or `await stop()`)."""
+    running: list[tuple[Worker, asyncio.Task]] = []
+
+    async def _start(task_queue: str, namespace: str = DEFAULT_NAMESPACE, identity: str | None = None, deployment: tuple[str, str] | None = None):
+        client = await TemporalClient.connect(temporal_env.client.service_client.config.target_host, namespace=namespace, runtime=heartbeat_runtime)
+        options: dict[str, Any] = {}
+        if deployment:
+            name, build_id = deployment
+            options["deployment_config"] = WorkerDeploymentConfig(
+                version=WorkerDeploymentVersion(deployment_name=name, build_id=build_id),
+                use_worker_versioning=True,
+                default_versioning_behavior=VersioningBehavior.PINNED,
+            )
+        w = Worker(
+            client,
+            task_queue=task_queue,
+            identity=identity or f"{task_queue}-worker",
+            workflows=[BlackboxWaiter],
+            activities=[blackbox_noop],
+            workflow_runner=UnsandboxedWorkflowRunner(),
+            **options,
+        )
+        task = asyncio.create_task(w.run())
+        running.append((w, task))
+
+        async def stop() -> None:
+            if not task.done():
+                await w.shutdown()
+            await asyncio.gather(task, return_exceptions=True)
+
+        return stop
+
+    yield _start
+    for w, task in running:
+        if not task.done():
+            await w.shutdown()
+        await asyncio.gather(task, return_exceptions=True)
+
+
+@pytest_asyncio.fixture(scope="session", loop_scope="session")
+async def call_heartbeats_off():
+    """call() against a second dev server with worker heartbeats and listing disabled."""
+    env = await WorkflowEnvironment.start_local(download_dest_dir=_download_dir(), dev_server_extra_args=["--namespace", OTHER_NAMESPACE, *HEARTBEATS_OFF])
+    try:
+        async with _mcp_session(env) as client:
+            yield _make_call(client)
+    finally:
+        await env.shutdown()
 
 
 async def wait_until(call: CallFn, name: str, args: dict, predicate: Callable[[bool, Any], bool], timeout: float = 30, interval: float = 0.25) -> tuple[bool, Any]:
