@@ -51,6 +51,9 @@ include = ["temporal_mcp*"]
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
 testpaths = ["tests"]
+markers = [
+    "blackbox: end-to-end tests that drive the MCP server against a real local Temporal dev server",
+]
 filterwarnings = [
     "ignore::pytest.PytestAssertRewriteWarning"
 ]
