@@ -83,7 +83,14 @@ def get_all_tools(allowed_namespaces: Optional[Iterable[str]] = None) -> list[To
         Tool(
             name="get_workflow_result",
             description="Get the result of a completed workflow",
-            input_schema={"type": "object", "properties": {"workflow_id": {"type": "string", "description": "The workflow execution ID"}}, "required": ["workflow_id"]},
+            input_schema={
+                "type": "object",
+                "properties": {
+                    "workflow_id": {"type": "string", "description": "The workflow execution ID"},
+                    "timeout": {"type": "number", "description": "Seconds to wait for the result. Omit to wait until the workflow closes, which blocks indefinitely on a running workflow."},
+                },
+                "required": ["workflow_id"],
+            },
         ),
         Tool(
             name="describe_workflow",
@@ -148,6 +155,10 @@ def get_all_tools(allowed_namespaces: Optional[Iterable[str]] = None) -> list[To
                     "task_queue": {"type": "string", "description": "Task queue for this activity"},
                     "args": {"type": "object", "description": "Arguments to pass to the activity"},
                     "start_to_close_timeout_seconds": {"type": "number", "description": "Activity start-to-close timeout in seconds"},
+                    "schedule_to_close_timeout_seconds": {
+                        "type": "number",
+                        "description": "Total time limit in seconds, including time queued before a worker picks the activity up. Unlike start-to-close, this bounds the wait when no worker is polling the task queue.",
+                    },
                 },
                 "required": ["activity", "activity_id", "task_queue"],
             },
@@ -163,6 +174,10 @@ def get_all_tools(allowed_namespaces: Optional[Iterable[str]] = None) -> list[To
                     "task_queue": {"type": "string", "description": "Task queue for this activity"},
                     "args": {"type": "object", "description": "Arguments to pass to the activity"},
                     "start_to_close_timeout_seconds": {"type": "number", "description": "Activity start-to-close timeout in seconds"},
+                    "schedule_to_close_timeout_seconds": {
+                        "type": "number",
+                        "description": "Total time limit in seconds, including time queued before a worker picks the activity up. Unlike start-to-close, this bounds the wait when no worker is polling the task queue.",
+                    },
                 },
                 "required": ["activity", "activity_id", "task_queue"],
             },
